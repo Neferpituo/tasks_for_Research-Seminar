@@ -1,252 +1,231 @@
 document.addEventListener('DOMContentLoaded', function() {
+    // DOM Elements
+    const loadButton = document.getElementById('loadButton');
+    const analyzeButton = document.getElementById('analyzeButton');
     const apiTokenInput = document.getElementById('apiToken');
-    const loadBtn = document.getElementById('loadBtn');
-    const analyzeBtn = document.getElementById('analyzeBtn');
-    const reviewTextElement = document.getElementById('reviewText');
-    const resultBox = document.getElementById('resultBox');
+    const reviewText = document.getElementById('reviewText');
     const sentimentIcon = document.getElementById('sentimentIcon');
-    const sentimentLabel = document.getElementById('sentimentLabel');
-    const confidence = document.getElementById('confidence');
-    const errorBox = document.getElementById('errorBox');
-    const totalReviewsElement = document.getElementById('totalReviews');
-    const analyzedCountElement = document.getElementById('analyzedCount');
-    const positiveCountElement = document.getElementById('positiveCount');
-    
-    const TSV_FILE_URL = 'reviews_test.tsv';
-    const MODEL_API_URL = 'https://api-inference.huggingface.co/models/siebert/sentiment-roberta-large-english';
-    
-    // Fallback review data in case TSV file is not found
-    const FALLBACK_REVIEWS = [
-        "This product is absolutely amazing! It exceeded all my expectations and works perfectly.",
-        "Very disappointed with the quality. The item broke after just two days of use.",
-        "It's okay for the price. Nothing special but gets the job done.",
-        "The best purchase I've made this year! Highly recommended to everyone.",
-        "Terrible customer service and the product doesn't match the description at all.",
-        "Works as advertised. Good value for money, would buy again.",
-        "I was expecting more based on the reviews. The performance is average at best.",
-        "Excellent quality and fast delivery. Very satisfied with my purchase!",
-        "Not worth the money. There are much better options available.",
-        "Perfect for my needs. Easy to use and very reliable."
-    ];
-    
+    const sentimentText = document.getElementById('sentimentText');
+    const confidenceScore = document.getElementById('confidenceScore');
+    const errorMessage = document.getElementById('errorMessage');
+    const reviewsLoaded = document.getElementById('reviewsLoaded');
+    const reviewsAnalyzed = document.getElementById('reviewsAnalyzed');
+    const positiveCount = document.getElementById('positiveCount');
+
+    // State variables
     let reviews = [];
-    let currentReviewIndex = -1;
-    let analyzedCount = 0;
-    let positiveCount = 0;
-    
-    loadBtn.addEventListener('click', loadReviews);
-    analyzeBtn.addEventListener('click', analyzeRandomReview);
-    
-    function loadReviews() {
-        reviews = [];
-        currentReviewIndex = -1;
-        analyzedCount = 0;
-        positiveCount = 0;
-        updateStats();
-        
-        loadBtn.disabled = true;
-        loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading Reviews...';
-        errorBox.style.display = 'none';
-        resultBox.style.display = 'none';
-        
-        fetch(TSV_FILE_URL)
-            .then(response => {
-                if (!response.ok) {
-                    console.log('TSV file not found, using fallback data');
-                    return null;
-                }
-                return response.text();
-            })
-            .then(tsvContent => {
-                if (tsvContent === null) {
-                    // TSV file not found, use fallback data
-                    console.log('Using fallback review data');
-                    reviews = FALLBACK_REVIEWS;
-                    totalReviewsElement.textContent = reviews.length;
-                    reviewTextElement.textContent = `Loaded ${reviews.length} sample reviews. Click "Analyze Random Review" to start analysis.`;
-                    analyzeBtn.disabled = false;
-                    loadBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Using Sample Data';
-                    showError('Note: reviews_test.tsv file not found. Using sample review data instead.');
-                    errorBox.style.backgroundColor = '#fff3cd';
-                    errorBox.style.color = '#856404';
-                    return;
-                }
-                
-                return new Promise((resolve, reject) => {
-                    Papa.parse(tsvContent, {
-                        delimiter: '\t',
-                        header: true,
-                        skipEmptyLines: true,
-                        complete: function(results) {
-                            resolve(results.data);
-                        },
-                        error: function(error) {
-                            reject(new Error(`TSV parsing error: ${error.message}`));
+    let stats = {
+        analyzed: 0,
+        positive: 0
+    };
+
+    // Event Listeners
+    loadButton.addEventListener('click', loadReviews);
+    analyzeButton.addEventListener('click', analyzeRandomReview);
+
+    // Load reviews from TSV file
+    async function loadReviews() {
+        try {
+            setLoading(loadButton, true);
+            clearError();
+
+            const response = await fetch('reviews_test.tsv');
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load file (Status: ${response.status})`);
+            }
+
+            const tsvData = await response.text();
+            
+            Papa.parse(tsvData, {
+                header: true,
+                delimiter: '\t',
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if (results.errors.length > 0) {
+                        throw new Error('Error parsing TSV file: ' + results.errors[0].message);
+                    }
+
+                    const data = results.data;
+                    if (data.length === 0) {
+                        throw new Error('No data found in TSV file');
+                    }
+
+                    reviews = data.map(row => {
+                        if (!row.text) {
+                            throw new Error('TSV file must contain a "text" column');
                         }
-                    });
-                });
-            })
-            .then(data => {
-                if (data && Array.isArray(data)) {
-                    // Process actual TSV data
-                    reviews = data.filter(item => {
-                        if (typeof item === 'object' && item !== null) {
-                            const text = item.text || item.Text || item.Review || item.review;
-                            return text && typeof text === 'string' && text.trim() !== '';
-                        }
-                        return false;
-                    }).map(item => {
-                        const text = item.text || item.Text || item.Review || item.review;
-                        return text.trim();
-                    });
-                    
+                        return row.text.trim();
+                    }).filter(text => text.length > 0);
+
                     if (reviews.length === 0) {
-                        // No valid reviews in TSV, use fallback
-                        reviews = FALLBACK_REVIEWS;
-                        showError('No valid reviews found in TSV file. Using sample data instead.');
-                        errorBox.style.backgroundColor = '#fff3cd';
-                        errorBox.style.color = '#856404';
+                        throw new Error('No valid review texts found in TSV file');
                     }
+
+                    reviewsLoaded.textContent = reviews.length;
+                    analyzeButton.disabled = false;
                     
-                    totalReviewsElement.textContent = reviews.length;
-                    reviewTextElement.textContent = `Successfully loaded ${reviews.length} reviews. Click "Analyze Random Review" to start analysis.`;
-                    analyzeBtn.disabled = false;
+                    showNotification(`Successfully loaded ${reviews.length} reviews`);
                     
-                    if (reviews === FALLBACK_REVIEWS) {
-                        loadBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Using Sample Data';
-                    } else {
-                        loadBtn.innerHTML = '<i class="fas fa-check"></i> Reviews Loaded';
-                    }
+                    // Reset statistics
+                    stats.analyzed = 0;
+                    stats.positive = 0;
+                    updateStats();
+                },
+                error: function(error) {
+                    throw new Error('Parser error: ' + error.message);
                 }
-            })
-            .catch(error => {
-                console.error('Error loading reviews:', error);
-                // Fallback to sample data on any error
-                reviews = FALLBACK_REVIEWS;
-                totalReviewsElement.textContent = reviews.length;
-                reviewTextElement.textContent = `Loaded ${reviews.length} sample reviews due to error. Click "Analyze Random Review" to start analysis.`;
-                analyzeBtn.disabled = false;
-                loadBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Using Sample Data';
-                showError(`Failed to load TSV file: ${error.message}. Using sample review data instead.`);
-                errorBox.style.backgroundColor = '#fff3cd';
-                errorBox.style.color = '#856404';
             });
+        } catch (error) {
+            showError(`Failed to load reviews_test.tsv. Please ensure the file exists in the correct location. Error: ${error.message}`);
+            reviews = [];
+            analyzeButton.disabled = true;
+            reviewsLoaded.textContent = '0';
+        } finally {
+            setLoading(loadButton, false);
+        }
     }
-    
-    function analyzeRandomReview() {
+
+    // Analyze random review using Hugging Face API
+    async function analyzeRandomReview() {
         if (reviews.length === 0) {
             showError('No reviews loaded. Please load reviews first.');
             return;
         }
-        
-        analyzeBtn.disabled = true;
-        analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
-        errorBox.style.display = 'none';
-        errorBox.style.backgroundColor = '#ffebee';
-        errorBox.style.color = '#c62828';
-        
-        currentReviewIndex = Math.floor(Math.random() * reviews.length);
-        const reviewText = reviews[currentReviewIndex];
-        
-        reviewTextElement.textContent = reviewText;
-        
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        
-        const apiToken = apiTokenInput.value.trim();
-        if (apiToken) {
-            headers['Authorization'] = `Bearer ${apiToken}`;
-        }
-        
-        fetch(MODEL_API_URL, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({ inputs: reviewText })
-        })
-        .then(response => {
+
+        try {
+            setLoading(analyzeButton, true);
+            clearError();
+
+            // Select random review
+            const randomIndex = Math.floor(Math.random() * reviews.length);
+            const selectedReview = reviews[randomIndex];
+            
+            // Display review
+            reviewText.textContent = selectedReview;
+
+            // Prepare API request
+            const token = apiTokenInput.value.trim();
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch(
+                'https://api-inference.huggingface.co/models/siebert/sentiment-roberta-large-english',
+                {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ inputs: selectedReview })
+                }
+            );
+
             if (!response.ok) {
-                if (response.status === 429) {
-                    throw new Error('Rate limit exceeded. Please wait or add your Hugging Face token.');
-                } else if (response.status === 401) {
-                    throw new Error('Invalid API token. Please check your token or leave it empty for free tier.');
+                const errorData = await response.json().catch(() => ({}));
+                
+                if (response.status === 401) {
+                    throw new Error('Invalid API token. Please check your token or leave it empty for anonymous access.');
+                } else if (response.status === 429) {
+                    throw new Error('Rate limit exceeded. Please wait or add your API token for higher limits.');
                 } else if (response.status === 503) {
                     throw new Error('Model is loading. Please try again in a few seconds.');
                 } else {
-                    throw new Error(`API error: ${response.status} ${response.statusText}`);
+                    throw new Error(`API error: ${response.status} - ${errorData.error || response.statusText}`);
                 }
             }
-            return response.json();
-        })
-        .then(data => {
-            if (!data || !Array.isArray(data) || !data[0] || !Array.isArray(data[0])) {
-                throw new Error('Unexpected API response format.');
+
+            const data = await response.json();
+            
+            // Parse response
+            let sentimentResult;
+            try {
+                sentimentResult = data[0][0];
+            } catch (e) {
+                throw new Error('Unexpected API response format');
             }
-            
-            const sentimentData = data[0][0];
-            if (!sentimentData || !sentimentData.label || !sentimentData.score) {
-                throw new Error('Invalid sentiment data in API response.');
+
+            if (!sentimentResult || !sentimentResult.label || !sentimentResult.score) {
+                throw new Error('Invalid API response format');
             }
-            
-            displaySentimentResult(sentimentData);
-            analyzedCount++;
-            
-            if (sentimentData.label === 'POSITIVE' && sentimentData.score > 0.5) {
-                positiveCount++;
+
+            // Determine sentiment
+            const score = sentimentResult.score;
+            const label = sentimentResult.label;
+            let sentiment, iconClass;
+
+            if (score > 0.5) {
+                if (label === 'POSITIVE') {
+                    sentiment = 'Positive';
+                    iconClass = 'fas fa-thumbs-up';
+                    stats.positive++;
+                } else if (label === 'NEGATIVE') {
+                    sentiment = 'Negative';
+                    iconClass = 'fas fa-thumbs-down';
+                } else {
+                    sentiment = 'Neutral';
+                    iconClass = 'fas fa-question-circle';
+                }
+            } else {
+                sentiment = 'Neutral';
+                iconClass = 'fas fa-question-circle';
             }
-            
+
+            // Update UI
+            sentimentIcon.innerHTML = `<i class="${iconClass}"></i>`;
+            sentimentText.textContent = sentiment;
+            confidenceScore.textContent = `Confidence: ${(score * 100).toFixed(1)}%`;
+
+            // Update statistics
+            stats.analyzed++;
             updateStats();
-        })
-        .catch(error => {
-            console.error('Error analyzing review:', error);
+
+        } catch (error) {
             showError(`Analysis failed: ${error.message}`);
-            resultBox.style.display = 'none';
-        })
-        .finally(() => {
-            analyzeBtn.disabled = false;
-            analyzeBtn.innerHTML = '<i class="fas fa-magic"></i> Analyze Random Review';
-        });
-    }
-    
-    function displaySentimentResult(sentimentData) {
-        const score = sentimentData.score;
-        const label = sentimentData.label;
-        
-        sentimentIcon.className = 'sentiment-icon';
-        sentimentIcon.classList.add('fas');
-        
-        let sentiment = 'neutral';
-        let iconClass = 'fa-question-circle';
-        let colorClass = 'neutral';
-        let labelText = 'Neutral';
-        
-        if (label === 'POSITIVE' && score > 0.5) {
-            sentiment = 'positive';
-            iconClass = 'fa-thumbs-up';
-            colorClass = 'positive';
-            labelText = 'Positive';
-        } else if (label === 'NEGATIVE' && score > 0.5) {
-            sentiment = 'negative';
-            iconClass = 'fa-thumbs-down';
-            colorClass = 'negative';
-            labelText = 'Negative';
+            
+            // Reset sentiment display on error
+            sentimentIcon.innerHTML = '<i class="fas fa-question-circle"></i>';
+            sentimentText.textContent = 'Error';
+            confidenceScore.textContent = 'Failed to analyze';
+        } finally {
+            setLoading(analyzeButton, false);
         }
-        
-        sentimentIcon.classList.add(iconClass, colorClass);
-        sentimentLabel.textContent = labelText;
-        sentimentLabel.className = `sentiment-label ${colorClass}`;
-        confidence.textContent = `Confidence: ${(score * 100).toFixed(1)}%`;
-        
-        resultBox.style.display = 'block';
     }
-    
-    function showError(message) {
-        errorBox.textContent = message;
-        errorBox.style.display = 'block';
-    }
-    
+
+    // Helper functions
     function updateStats() {
-        analyzedCountElement.textContent = analyzedCount;
-        positiveCountElement.textContent = positiveCount;
+        reviewsAnalyzed.textContent = stats.analyzed;
+        positiveCount.textContent = stats.positive;
+    }
+
+    function setLoading(button, isLoading) {
+        if (isLoading) {
+            const originalHTML = button.innerHTML;
+            button.setAttribute('data-original-html', originalHTML);
+            button.innerHTML = `<span class="loading"></span> Loading...`;
+            button.disabled = true;
+        } else {
+            const originalHTML = button.getAttribute('data-original-html');
+            if (originalHTML) {
+                button.innerHTML = originalHTML;
+            }
+            button.disabled = false;
+        }
+    }
+
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.classList.add('show');
+    }
+
+    function clearError() {
+        errorMessage.classList.remove('show');
+        errorMessage.textContent = '';
+    }
+
+    function showNotification(message) {
+        alert(message); // Simple alert for success notification
     }
 });
