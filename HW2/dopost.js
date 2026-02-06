@@ -14,9 +14,9 @@ function doPost(e) {
   var ts = p.ts ? new Date(Number(p.ts)) : new Date();
   sh.appendRow([
     ts.toISOString(),
-    p.event || '',
-    p.variant || '',
-    p.userId || '',
+    p.ts_iso || '',
+    p.review || '',
+    p.sentiment || '',
     p.meta || ''
   ]);
   return ContentService.createTextOutput('OK'); // text is fine for simple requests
