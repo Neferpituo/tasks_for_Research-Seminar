@@ -192,20 +192,12 @@ async function logToGoogleSheet({ review, label, score }) {
 
 
 // Display sentiment result
+// Display sentiment result
 function displaySentiment(result) {
-  // Default to neutral if we can't parse the result
   let sentiment = "neutral";
   let score = 0.5;
   let label = "NEUTRAL";
 
-  logToGoogleSheet({
-  review: reviewText.textContent,
-  label,
-  score
-});
-
-
-  // Expected format: [[{label: 'POSITIVE', score: 0.99}]]
   if (
     Array.isArray(result) &&
     result.length > 0 &&
@@ -224,10 +216,10 @@ function displaySentiment(result) {
           ? sentimentData.score
           : 0.5;
 
-      // Determine sentiment bucket
-      if (label === "POSITIVE" && score > 0.5) {
+      // Исправлено: убрана проверка score > 0.5
+      if (label === "POSITIVE") {
         sentiment = "positive";
-      } else if (label === "NEGATIVE" && score > 0.5) {
+      } else if (label === "NEGATIVE") {
         sentiment = "negative";
       } else {
         sentiment = "neutral";
@@ -241,6 +233,8 @@ function displaySentiment(result) {
         <i class="fas ${getSentimentIcon(sentiment)} icon"></i>
         <span>${label} (${(score * 100).toFixed(1)}% confidence)</span>
     `;
+  
+  return { sentiment: label, confidence: score, sentimentBucket: sentiment };
 }
 
 // Get appropriate icon for sentiment bucket
