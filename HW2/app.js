@@ -164,6 +164,7 @@ async function analyzeSentiment(text) {
 }
 
 // Display sentiment result
+// Display sentiment result
 function displaySentiment(result) {
   let sentiment = "neutral";
   let score = 0.5;
@@ -187,15 +188,26 @@ function displaySentiment(result) {
           ? sentimentData.score
           : 0.5;
 
-      if (label === "POSITIVE" && score > 0.5) {
+      // Исправлено: убрана проверка score > 0.5
+      if (label === "POSITIVE") {
         sentiment = "positive";
-      } else if (label === "NEGATIVE" && score > 0.5) {
+      } else if (label === "NEGATIVE") {
         sentiment = "negative";
       } else {
         sentiment = "neutral";
       }
     }
   }
+
+  // Update UI
+  sentimentResult.classList.add(sentiment);
+  sentimentResult.innerHTML = `
+        <i class="fas ${getSentimentIcon(sentiment)} icon"></i>
+        <span>${label} (${(score * 100).toFixed(1)}% confidence)</span>
+    `;
+  
+  return { sentiment: label, confidence: score, sentimentBucket: sentiment };
+}
 
   // Update UI
   sentimentResult.classList.add(sentiment);
